@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Loader2, ChevronDown, CheckCircle2 } from 'lucide-react';
-import { Rule } from '../types';
+import { AiGenerationSession, Employee, Rule } from '../types';
 
 interface AiModalProps {
   isOpen: boolean;
   onClose: () => void;
   onRuleGenerated: (rule: Rule) => void;
   onComplete: () => void;
+  currentEmployee: Employee;
+  onSessionStart: (session: AiGenerationSession) => void;
+  onSessionComplete: (sessionId: string, businessBatchId: string, endedAt: string, generatedCount: number, durationMs: number) => void;
+  onSessionCancel: (sessionId: string, businessBatchId: string, endedAt: string, durationMs: number) => void;
 }
 
 const QUALITY_TYPES = [
@@ -33,25 +37,61 @@ const QUALITY_TYPES = [
 ];
 
 const DOCS = ['上市公司2023年报披露要求.pdf', '各类理财产品质检规划_v2.docx', '债券存续期规则v1.1.pdf'];
+const FIELD_SCOPE = ['F013V_STK487', 'F010V_STK487', 'F012N_STK487'];
 
-const generateMockRule = (index: number, type: string): Rule => ({
-  id: Math.floor(Math.random() * 100000).toString(),
+const nowId = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+const generateMockRule = (
+  index: number,
+  type: string,
+  doc: string,
+  employee: Employee,
+  sessionId: string,
+  businessBatchId: string,
+): Rule => ({
+  id: nowId('AI'),
   name: `(AI生成) ${type} - 质检规则 ${index + 1}`,
-  fieldName: ['F013V_STK487', 'F010V_STK487', 'F012N_STK487'][index % 3],
-  groupCategory: type,
+  fieldName: FIELD_SCOPE[index % 3],
+  groupCategory: `${type}组`,
   priority: [1, 2, 3, 4][index % 4] as any,
   qualityType: 'AI质检',
   debugStatus: '未调试',
   errorType: index % 2 === 0 ? '肯定错误' : '可疑错误',
   status: '正常',
   isValid: true,
-  author: 'AI助手',
+  author: employee.employeeName,
   createdAt: new Date().toLocaleString(),
   isGenerated: true,
-  isRead: false
+  isRead: false,
+  source: 'AI_GENERATED',
+  relatedSessionId: sessionId,
+  businessBatchId,
+  planningDocId: doc,
+  qualityCategory: type,
+  creatorEmployeeId: employee.employeeId,
+  creatorDepartmentId: employee.departmentId,
+  generatedSnapshot: {
+    name: `(AI生成) ${type} - 质检规则 ${index + 1}`,
+    fieldName: FIELD_SCOPE[index % 3],
+    groupCategory: `${type}组`,
+    priority: [1, 2, 3, 4][index % 4] as any,
+    errorType: index % 2 === 0 ? '肯定错误' : '可疑错误',
+    qualityType: 'AI质检',
+    isValid: true,
+    status: '正常',
+  },
 });
 
-export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }: AiModalProps) {
+export default function AiModal({
+  isOpen,
+  onClose,
+  onRuleGenerated,
+  onComplete,
+  currentEmployee,
+  onSessionStart,
+  onSessionComplete,
+  onSessionCancel,
+}: AiModalProps) {
   const [step, setStep] = useState<'form' | 'generating' | 'completed'>('form');
   
   // Form State
@@ -66,6 +106,8 @@ export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const elapsedTimeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
+  const activeSessionRef = useRef<AiGenerationSession | null>(null);
+  const startTimeRef = useRef<number>(0);
 
   useEffect(() => {
     if (!isOpen) {
@@ -73,6 +115,7 @@ export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }
       setLogs([]);
       setElapsedTime(0);
       setIsTypeDropdownOpen(false);
+      activeSessionRef.current = null;
       clearTimer();
     }
   }, [isOpen]);
@@ -95,13 +138,31 @@ export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }
   };
 
   const startGeneration = () => {
+    const startedAt = new Date().toISOString();
+    const session: AiGenerationSession = {
+      sessionId: nowId('SESSION'),
+      businessBatchId: `BIZ-${selectedType}-${Date.now()}`,
+      planningDocId: selectedDoc,
+      qualityCategory: selectedType,
+      groupName: `${selectedType}组`,
+      fieldScope: FIELD_SCOPE,
+      employeeId: currentEmployee.employeeId,
+      employeeName: currentEmployee.employeeName,
+      departmentId: currentEmployee.departmentId,
+      departmentName: currentEmployee.departmentName,
+      startedAt,
+      status: 'started',
+      generatedCount: 0,
+    };
+    activeSessionRef.current = session;
+    startTimeRef.current = Date.now();
+    onSessionStart(session);
     setStep('generating');
     setLogs([]);
     setElapsedTime(0);
     
-    const startTime = Date.now();
     elapsedTimeTimerRef.current = setInterval(() => {
-        setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+        setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
     }, 1000);
     
     let rulesGenerated = 0;
@@ -116,13 +177,27 @@ export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }
       else if (logCounter === 2) newLog = `开始批量生成 ${selectedType} 的质检语句...`;
       else if (logCounter > 2 && rulesGenerated < totalRules) {
           newLog = `生成第 ${rulesGenerated + 1} 条质检语句...`;
-          const newRule = generateMockRule(rulesGenerated, selectedType);
+          const newRule = generateMockRule(
+            rulesGenerated,
+            selectedType,
+            selectedDoc,
+            currentEmployee,
+            session.sessionId,
+            session.businessBatchId,
+          );
           onRuleGenerated(newRule);
           rulesGenerated++;
       } else if (rulesGenerated >= totalRules && logCounter === totalRules + 3) {
           newLog = "所有语句生成校验完成。";
       } else if (logCounter > totalRules + 3) {
           clearTimer();
+          onSessionComplete(
+            session.sessionId,
+            session.businessBatchId,
+            new Date().toISOString(),
+            rulesGenerated,
+            Date.now() - startTimeRef.current,
+          );
           setStep('completed');
           return;
       }
@@ -134,6 +209,14 @@ export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }
   };
 
   const handleCancel = () => {
+    if (activeSessionRef.current) {
+      onSessionCancel(
+        activeSessionRef.current.sessionId,
+        activeSessionRef.current.businessBatchId,
+        new Date().toISOString(),
+        Date.now() - startTimeRef.current,
+      );
+    }
     clearTimer();
     setStep('form');
     setLogs([]);
