@@ -7,7 +7,7 @@ export interface Rule {
   qualityType: '规则质检' | 'AI质检';
   debugStatus: string;
   errorType: string;
-  status: '正常' | '异常';
+  status: '正常' | '异常' | '停用';
   isValid: boolean;
   author: string;
   createdAt: string;

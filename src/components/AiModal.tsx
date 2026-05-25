@@ -33,6 +33,7 @@ const QUALITY_TYPES = [
 ];
 
 const DOCS = ['上市公司2023年报披露要求.pdf', '各类理财产品质检规划_v2.docx', '债券存续期规则v1.1.pdf'];
+const GENERATED_AUTHORS = ['张三', '李四', '王五', '赵六', '钱七'];
 
 const generateMockRule = (index: number, type: string): Rule => ({
   id: Math.floor(Math.random() * 100000).toString(),
@@ -43,9 +44,9 @@ const generateMockRule = (index: number, type: string): Rule => ({
   qualityType: 'AI质检',
   debugStatus: '未调试',
   errorType: index % 2 === 0 ? '肯定错误' : '可疑错误',
-  status: '正常',
+  status: '停用',
   isValid: true,
-  author: 'AI助手',
+  author: GENERATED_AUTHORS[index % GENERATED_AUTHORS.length],
   createdAt: new Date().toLocaleString(),
   isGenerated: true,
   isRead: false

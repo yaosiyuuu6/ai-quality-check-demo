@@ -198,7 +198,13 @@ export default function App() {
                     <td className="px-4 py-3 text-gray-600">{rule.debugStatus}</td>
                     <td className="px-4 py-3 text-gray-600">{rule.errorType}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded text-xs leading-tight ${rule.status === '正常' ? 'bg-green-100/60 text-green-700 border border-green-200/50' : 'bg-red-100 text-red-700'}`}>
+                      <span className={`px-2 py-0.5 rounded text-xs leading-tight ${
+                        rule.status === '正常'
+                          ? 'bg-green-100/60 text-green-700 border border-green-200/50'
+                          : rule.status === '停用'
+                            ? 'bg-gray-100 text-gray-600 border border-gray-200'
+                            : 'bg-red-100 text-red-700'
+                      }`}>
                         {rule.status}
                       </span>
                     </td>
