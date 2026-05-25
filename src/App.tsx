@@ -1,55 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, ChevronUp, Search, X, Play, Copy, RefreshCw, Settings2, Trash2, Edit } from 'lucide-react';
-import { AiGenerationSession, AiUsageEvent, AiUsageEventType, Employee, Rule, RuleFormData, RuleSnapshot } from './types';
+import { Rule, RuleFormData } from './types';
 import RuleModal from './components/RuleModal';
 import AiModal from './components/AiModal';
-import UsageDashboard from './components/UsageDashboard';
-
-const employees: Employee[] = [
-  { employeeId: 'E1001', employeeName: '关玉阁', departmentId: 'D01', departmentName: '数据质检一组', role: 'manager' },
-  { employeeId: 'E1002', employeeName: '姚晨凯', departmentId: 'D02', departmentName: '产品平台组', role: 'product' },
-  { employeeId: 'E1003', employeeName: '李明', departmentId: 'D01', departmentName: '数据质检一组', role: 'employee' },
-];
-
-const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
-const snapshotRule = (rule: Rule): RuleSnapshot => ({
-  name: rule.name,
-  fieldName: rule.fieldName,
-  groupCategory: rule.groupCategory,
-  priority: rule.priority,
-  errorType: rule.errorType,
-  qualityType: rule.qualityType,
-  isValid: rule.isValid,
-  status: rule.status,
-});
-
-const snapshotFromForm = (data: RuleFormData, fallback?: Rule): RuleSnapshot => ({
-  name: data.name || fallback?.name || '',
-  fieldName: data.fieldName || fallback?.fieldName || '',
-  groupCategory: data.categoryValue || fallback?.groupCategory || '财务分部/国财-A股组',
-  priority: data.priority || fallback?.priority || 4,
-  errorType: data.errorType || fallback?.errorType || '肯定错误',
-  qualityType: data.qualityType || fallback?.qualityType || '规则质检',
-  isValid: fallback?.isValid ?? true,
-  status: fallback?.status || '正常',
-});
-
-const hasSnapshotChanged = (before?: RuleSnapshot, after?: RuleSnapshot) => {
-  if (!before || !after) return false;
-  return JSON.stringify(before) !== JSON.stringify(after);
-};
 
 export default function App() {
   const [rules, setRules] = useState<Rule[]>([]);
-  const [sessions, setSessions] = useState<AiGenerationSession[]>([]);
-  const [events, setEvents] = useState<AiUsageEvent[]>([]);
-  const [currentEmployee, setCurrentEmployee] = useState<Employee>(employees[0]);
   
   // Modals state
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
-  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
   // New Rule Dropdown state
@@ -66,108 +26,28 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const trackEvent = (
-    eventType: AiUsageEventType,
-    details: {
-      employee?: Employee;
-      sessionId?: string;
-      ruleId?: string;
-      businessBatchId?: string;
-      payload?: AiUsageEvent['payload'];
-    } = {},
-  ) => {
-    const employee = details.employee || currentEmployee;
-    setEvents((prev) => [
-      ...prev,
-      {
-        eventId: createId('EVT'),
-        eventType,
-        timestamp: new Date().toISOString(),
-        employeeId: employee.employeeId,
-        employeeName: employee.employeeName,
-        departmentId: employee.departmentId,
-        departmentName: employee.departmentName,
-        sessionId: details.sessionId,
-        ruleId: details.ruleId,
-        businessBatchId: details.businessBatchId,
-        payload: details.payload,
-      },
-    ]);
-  };
-
-  const findRelatedSessionForManualRule = (data: RuleFormData) => {
-    const completed = [...sessions]
-      .filter((session) => session.status === 'completed')
-      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
-    return (
-      completed.find((session) => session.fieldScope.includes(data.fieldName)) ||
-      completed.find((session) => data.categoryValue?.includes(session.qualityCategory)) ||
-      completed[0]
-    );
-  };
-
   const handleCreateSingle = () => {
     setEditingRuleId(null);
     setIsNewRuleMenuOpen(false);
-    trackEvent('manual_rule_create');
     setIsRuleModalOpen(true);
   };
 
   const handleCreateAi = () => {
     setIsNewRuleMenuOpen(false);
-    trackEvent('ai_entry_click');
     setIsAiModalOpen(true);
   };
 
   const handleEdit = (id: string) => {
-    const rule = rules.find((item) => item.id === id);
-    if (!rule || rule.deletedAt) return;
     setEditingRuleId(id);
     
     // Mark as read if generated
-    setRules(prev => prev.map(r => r.id === id ? { ...r, isRead: true, viewedAt: r.viewedAt || new Date().toISOString(), editedAt: new Date().toISOString() } : r));
-    if (rule.source === 'AI_GENERATED') {
-      trackEvent('ai_rule_view', { sessionId: rule.relatedSessionId, ruleId: id, businessBatchId: rule.businessBatchId });
-      trackEvent('ai_rule_edit_start', { sessionId: rule.relatedSessionId, ruleId: id, businessBatchId: rule.businessBatchId });
-    }
+    setRules(prev => prev.map(r => r.id === id ? { ...r, isRead: true } : r));
     setIsRuleModalOpen(true);
   };
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const deletedAt = new Date().toISOString();
-    const target = rules.find((rule) => rule.id === id);
-    setRules((prev) => prev.map((rule) => (rule.id === id ? { ...rule, deletedAt } : rule)));
-    if (target?.source === 'AI_GENERATED') {
-      trackEvent('ai_rule_delete', { sessionId: target.relatedSessionId, ruleId: id, businessBatchId: target.businessBatchId });
-    }
-  };
-
-  const handleToggleRule = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const changedAt = new Date().toISOString();
-    const target = rules.find((rule) => rule.id === id);
-    if (!target) return;
-    const nextIsValid = !target.isValid;
-    setRules((prev) =>
-      prev.map((rule) =>
-        rule.id === id
-          ? {
-              ...rule,
-              isValid: nextIsValid,
-              enabledAt: nextIsValid ? changedAt : rule.enabledAt,
-              disabledAt: nextIsValid ? rule.disabledAt : changedAt,
-            }
-          : rule,
-      ),
-    );
-    if (target.source === 'AI_GENERATED') {
-      trackEvent(nextIsValid ? 'ai_rule_enable' : 'ai_rule_disable', {
-        sessionId: target.relatedSessionId,
-        ruleId: id,
-        businessBatchId: target.businessBatchId,
-      });
-    }
+    setRules(rules.filter((r) => r.id !== id));
   };
 
   const handleCloseRuleModal = () => {
@@ -177,80 +57,7 @@ export default function App() {
   
   const handleSaveRuleModal = (data: RuleFormData) => {
     console.log('Saved Data:', data);
-    const savedAt = new Date().toISOString();
-    const editingRule = editingRuleId ? rules.find((rule) => rule.id === editingRuleId) : undefined;
-    const savedSnapshot = snapshotFromForm(data, editingRule);
-
-    if (editingRule) {
-      const generatedSnapshot = editingRule.generatedSnapshot || snapshotRule(editingRule);
-      const wasModified = editingRule.source === 'AI_GENERATED' ? hasSnapshotChanged(generatedSnapshot, savedSnapshot) : editingRule.wasModified;
-      setRules((prev) =>
-        prev.map((rule) =>
-          rule.id === editingRule.id
-            ? {
-                ...rule,
-                name: savedSnapshot.name,
-                fieldName: savedSnapshot.fieldName,
-                groupCategory: savedSnapshot.groupCategory,
-                priority: savedSnapshot.priority,
-                errorType: savedSnapshot.errorType,
-                qualityType: savedSnapshot.qualityType,
-                savedAt,
-                savedSnapshot,
-                wasModified,
-              }
-            : rule,
-        ),
-      );
-      if (editingRule.source === 'AI_GENERATED') {
-        trackEvent('ai_rule_save', {
-          sessionId: editingRule.relatedSessionId,
-          ruleId: editingRule.id,
-          businessBatchId: editingRule.businessBatchId,
-          payload: { wasModified },
-        });
-      } else if (editingRule.source === 'MANUAL') {
-        trackEvent('manual_rule_save', {
-          sessionId: editingRule.relatedSessionId,
-          ruleId: editingRule.id,
-          businessBatchId: editingRule.businessBatchId,
-        });
-      }
-    } else {
-      const relatedSession = findRelatedSessionForManualRule(data);
-      const rule: Rule = {
-        id: createId('MANUAL'),
-        name: savedSnapshot.name || '(人工)未命名质检规则',
-        fieldName: savedSnapshot.fieldName || 'F013V_STK487',
-        groupCategory: savedSnapshot.groupCategory || relatedSession?.groupName || '财务分部/国财-A股组',
-        priority: savedSnapshot.priority,
-        qualityType: savedSnapshot.qualityType,
-        debugStatus: '未调试',
-        errorType: savedSnapshot.errorType,
-        status: '正常',
-        isValid: true,
-        author: currentEmployee.employeeName,
-        createdAt: new Date().toLocaleString(),
-        source: 'MANUAL',
-        relatedSessionId: relatedSession?.sessionId,
-        businessBatchId: relatedSession?.businessBatchId,
-        planningDocId: relatedSession?.planningDocId,
-        qualityCategory: relatedSession?.qualityCategory,
-        creatorEmployeeId: currentEmployee.employeeId,
-        creatorDepartmentId: currentEmployee.departmentId,
-        savedAt,
-        savedSnapshot,
-      };
-      setRules((prev) => [...prev, rule]);
-      trackEvent('manual_rule_save', {
-        sessionId: relatedSession?.sessionId,
-        ruleId: rule.id,
-        businessBatchId: relatedSession?.businessBatchId,
-        payload: { attribution: relatedSession ? 'matched_business_batch' : 'unmatched' },
-      });
-    }
     setIsRuleModalOpen(false);
-    setEditingRuleId(null);
   };
 
   const handleAiComplete = () => {
@@ -260,50 +67,6 @@ export default function App() {
   const handleRuleGenerated = (rule: Rule) => {
     setRules(prev => [...prev, rule]);
   };
-
-  const handleSessionStart = (session: AiGenerationSession) => {
-    setSessions((prev) => [...prev, session]);
-    trackEvent('ai_generation_start', {
-      employee: employees.find((employee) => employee.employeeId === session.employeeId),
-      sessionId: session.sessionId,
-      businessBatchId: session.businessBatchId,
-      payload: {
-        qualityCategory: session.qualityCategory,
-        planningDocId: session.planningDocId,
-      },
-    });
-  };
-
-  const handleSessionComplete = (sessionId: string, businessBatchId: string, endedAt: string, generatedCount: number, durationMs: number) => {
-    setSessions((prev) =>
-      prev.map((item) =>
-        item.sessionId === sessionId ? { ...item, endedAt, status: 'completed', generatedCount, durationMs } : item,
-      ),
-    );
-    trackEvent('ai_generation_complete', {
-      sessionId,
-      businessBatchId,
-      payload: { generatedCount, durationMs },
-    });
-  };
-
-  const handleSessionCancel = (sessionId: string, businessBatchId: string, endedAt: string, durationMs: number) => {
-    setSessions((prev) =>
-      prev.map((item) => (item.sessionId === sessionId ? { ...item, endedAt, status: 'canceled', durationMs } : item)),
-    );
-    trackEvent('ai_generation_cancel', {
-      sessionId,
-      businessBatchId,
-      payload: { durationMs },
-    });
-  };
-
-  const handleAiDebug = () => {
-    trackEvent('ai_debug_run');
-    window.setTimeout(() => trackEvent('ai_debug_success'), 350);
-  };
-
-  const visibleRules = rules.filter((rule) => !rule.deletedAt);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-sm text-gray-800">
@@ -357,35 +120,15 @@ export default function App() {
             <button className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-1.5 rounded transition shadow-sm text-sm">
               运行全部
             </button>
-            <button onClick={handleAiDebug} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-1.5 rounded transition shadow-sm text-sm">
+            <button className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-1.5 rounded transition shadow-sm text-sm">
               ai调试
             </button>
             <button className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-1.5 rounded transition shadow-sm text-sm">
               样例数据
             </button>
-            <button onClick={() => setIsDashboardOpen(true)} className="bg-gray-900 hover:bg-gray-800 text-white px-4 py-1.5 rounded transition shadow-sm text-sm">
-              AI质检统计看板
-            </button>
           </div>
           
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs text-gray-500">
-              当前员工
-              <select
-                value={currentEmployee.employeeId}
-                onChange={(event) => {
-                  const employee = employees.find((item) => item.employeeId === event.target.value);
-                  if (employee) setCurrentEmployee(employee);
-                }}
-                className="rounded border border-gray-300 bg-white px-2 py-1 text-gray-700"
-              >
-                {employees.map((employee) => (
-                  <option key={employee.employeeId} value={employee.employeeId}>
-                    {employee.employeeName} / {employee.departmentName}
-                  </option>
-                ))}
-              </select>
-            </label>
             <button className="text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded text-sm transition">重置</button>
             <button className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-1.5 rounded text-sm transition shadow-sm">查询</button>
             <button className="text-blue-600 hover:text-blue-700 flex items-center text-sm gap-1 transition">
@@ -418,14 +161,14 @@ export default function App() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {visibleRules.length === 0 && (
+              {rules.length === 0 && (
                 <tr>
                   <td colSpan={14} className="px-4 py-8 text-center text-gray-500">
                     暂无数据，请尝试新建语句
                   </td>
                 </tr>
               )}
-              {visibleRules.map((rule) => {
+              {rules.map((rule) => {
                 const isGeneratedUnread = rule.isGenerated && !rule.isRead;
                 return (
                   <tr 
@@ -469,9 +212,7 @@ export default function App() {
                     <td className="px-4 py-3 text-gray-500 text-xs">{rule.createdAt}</td>
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-3 justify-center text-[13px] text-blue-600">
-                        <button onClick={(e) => handleToggleRule(rule.id, e)} className="hover:text-blue-800 transition">
-                          {rule.isValid ? '停用' : '启用'}
-                        </button>
+                        <button className="hover:text-blue-800 transition">停用</button>
                         <button onClick={() => handleEdit(rule.id)} className="hover:text-blue-800 transition">编辑</button>
                         <button onClick={(e) => handleDelete(rule.id, e)} className="text-red-500 hover:text-red-700 transition">删除</button>
                       </div>
@@ -500,19 +241,6 @@ export default function App() {
         onClose={() => setIsAiModalOpen(false)}
         onRuleGenerated={handleRuleGenerated}
         onComplete={handleAiComplete}
-        currentEmployee={currentEmployee}
-        onSessionStart={handleSessionStart}
-        onSessionComplete={handleSessionComplete}
-        onSessionCancel={handleSessionCancel}
-      />
-
-      <UsageDashboard
-        isOpen={isDashboardOpen}
-        onClose={() => setIsDashboardOpen(false)}
-        employees={employees}
-        rules={rules}
-        sessions={sessions}
-        events={events}
       />
     </div>
   );
