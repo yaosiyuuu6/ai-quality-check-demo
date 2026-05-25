@@ -45,9 +45,29 @@ export default function App() {
     setIsRuleModalOpen(true);
   };
 
+  const handleEditAction = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    handleEdit(id);
+  };
+
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setRules(rules.filter((r) => r.id !== id));
+  };
+
+  const handleToggleStatus = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRules((prev) =>
+      prev.map((rule) =>
+        rule.id === id
+          ? {
+              ...rule,
+              status: rule.status === '停用' ? '正常' : '停用',
+              isValid: true,
+            }
+          : rule,
+      ),
+    );
   };
 
   const handleCloseRuleModal = () => {
@@ -216,10 +236,12 @@ export default function App() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{rule.createdAt}</td>
-                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-3 justify-center text-[13px] text-blue-600">
-                        <button className="hover:text-blue-800 transition">停用</button>
-                        <button onClick={() => handleEdit(rule.id)} className="hover:text-blue-800 transition">编辑</button>
+                        <button onClick={(e) => handleToggleStatus(rule.id, e)} className="hover:text-blue-800 transition">
+                          {rule.status === '停用' ? '启用' : '停用'}
+                        </button>
+                        <button onClick={(e) => handleEditAction(rule.id, e)} className="hover:text-blue-800 transition">编辑</button>
                         <button onClick={(e) => handleDelete(rule.id, e)} className="text-red-500 hover:text-red-700 transition">删除</button>
                       </div>
                     </td>
