@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Loader2, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { X, Loader2, ChevronDown, CheckCircle2, Clock } from 'lucide-react';
 import { Rule } from '../types';
 
 interface AiModalProps {
@@ -59,6 +59,7 @@ export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }
   // Form State
   const [selectedType, setSelectedType] = useState(QUALITY_TYPES[0].label);
   const [selectedDoc, setSelectedDoc] = useState(DOCS[0]);
+  const [timingStrategy, setTimingStrategy] = useState('09:00:00');
   const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
   
   // Generation State
@@ -210,6 +211,19 @@ export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }
                     {DOCS.map(doc => <option key={doc} value={doc}>{doc}</option>)}
                   </select>
                   <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-gray-700 font-medium">定时策略</label>
+                <div className="relative w-[136px]">
+                  <input
+                    type="text"
+                    value={timingStrategy}
+                    onChange={(e) => setTimingStrategy(e.target.value)}
+                    className="w-full rounded border border-gray-300 px-3 py-2 pr-9 text-[14px] text-gray-800 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                  <Clock className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
                 </div>
               </div>
             </div>
