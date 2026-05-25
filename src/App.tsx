@@ -4,8 +4,14 @@ import { Rule, RuleFormData } from './types';
 import RuleModal from './components/RuleModal';
 import AiModal from './components/AiModal';
 
+type RuleSource = 'AI_GENERATED' | 'MANUAL';
+
+const getRuleSource = (rule: Rule): RuleSource => rule.source || (rule.isGenerated ? 'AI_GENERATED' : 'MANUAL');
+const getSourceLabel = (source: RuleSource) => (source === 'AI_GENERATED' ? 'AI生成' : '人工新建');
+
 export default function App() {
   const [rules, setRules] = useState<Rule[]>([]);
+  const [sourceFilter, setSourceFilter] = useState<'全部' | RuleSource>('全部');
   
   // Modals state
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
@@ -77,7 +83,46 @@ export default function App() {
   
   const handleSaveRuleModal = (data: RuleFormData) => {
     console.log('Saved Data:', data);
+    const existingRule = editingRuleId ? rules.find((rule) => rule.id === editingRuleId) : undefined;
+    if (existingRule) {
+      setRules((prev) =>
+        prev.map((rule) =>
+          rule.id === editingRuleId
+            ? {
+                ...rule,
+                name: data.name || rule.name,
+                groupCategory: data.categoryValue || rule.groupCategory,
+                fieldName: data.fieldName || rule.fieldName,
+                priority: data.priority || rule.priority,
+                errorType: data.errorType || rule.errorType,
+                qualityType: data.qualityType || rule.qualityType,
+                source: getRuleSource(rule),
+              }
+            : rule,
+        ),
+      );
+    } else {
+      const manualRule: Rule = {
+        id: Math.floor(Math.random() * 100000).toString(),
+        name: data.name || '(人工新建) 质检规则',
+        fieldName: data.fieldName || 'F013V_STK487',
+        groupCategory: data.categoryValue || '财务分部/国财-A股组',
+        priority: data.priority || 4,
+        qualityType: data.qualityType || '规则质检',
+        debugStatus: '未调试',
+        errorType: data.errorType || '肯定错误',
+        status: '正常',
+        isValid: true,
+        author: '人工录入',
+        createdAt: new Date().toLocaleString(),
+        source: 'MANUAL',
+        isGenerated: false,
+        isRead: true,
+      };
+      setRules((prev) => [...prev, manualRule]);
+    }
     setIsRuleModalOpen(false);
+    setEditingRuleId(null);
   };
 
   const handleAiComplete = () => {
@@ -87,6 +132,8 @@ export default function App() {
   const handleRuleGenerated = (rule: Rule) => {
     setRules(prev => [...prev, rule]);
   };
+
+  const filteredRules = rules.filter((rule) => sourceFilter === '全部' || getRuleSource(rule) === sourceFilter);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-sm text-gray-800">
@@ -103,6 +150,7 @@ export default function App() {
           <FilterSelect label="有效" placeholder="请选择" />
           <FilterInput label="添加人" placeholder="请输入" />
           <FilterSelect label="质检类型" placeholder="请选择" />
+          <SourceFilter value={sourceFilter} onChange={setSourceFilter} />
         </div>
         
         <div className="flex justify-between items-center bg-gray-50/50 p-2 rounded -mx-2">
@@ -171,6 +219,7 @@ export default function App() {
                 <th className="px-4 py-3">组或分类</th>
                 <th className="px-4 py-3">优先级</th>
                 <th className="px-4 py-3">质检类型</th>
+                <th className="px-4 py-3">来源</th>
                 <th className="px-4 py-3">调试状态</th>
                 <th className="px-4 py-3">错误类型</th>
                 <th className="px-4 py-3">状态</th>
@@ -181,15 +230,16 @@ export default function App() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rules.length === 0 && (
+              {filteredRules.length === 0 && (
                 <tr>
-                  <td colSpan={14} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={15} className="px-4 py-8 text-center text-gray-500">
                     暂无数据，请尝试新建语句
                   </td>
                 </tr>
               )}
-              {rules.map((rule) => {
+              {filteredRules.map((rule) => {
                 const isGeneratedUnread = rule.isGenerated && !rule.isRead;
+                const source = getRuleSource(rule);
                 return (
                   <tr 
                     key={rule.id} 
@@ -215,6 +265,15 @@ export default function App() {
                     </td>
                     <td className="px-4 py-3 text-gray-600">{rule.priority}</td>
                     <td className="px-4 py-3 text-gray-600">{rule.qualityType}</td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded border px-2 py-0.5 text-xs ${
+                        source === 'AI_GENERATED'
+                          ? 'border-blue-200 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 bg-gray-50 text-gray-600'
+                      }`}>
+                        {getSourceLabel(source)}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-gray-600">{rule.debugStatus}</td>
                     <td className="px-4 py-3 text-gray-600">{rule.errorType}</td>
                     <td className="px-4 py-3">
@@ -295,6 +354,34 @@ function FilterSelect({ label, placeholder }: { label: string; placeholder: stri
         <select className="w-full appearance-none px-3 py-1.5 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition text-gray-700">
           <option value="" disabled selected className="text-gray-400">{placeholder}</option>
           <option value="1">Option 1</option>
+        </select>
+        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+          <ChevronDown className="w-4 h-4" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SourceFilter({
+  value,
+  onChange,
+}: {
+  value: '全部' | RuleSource;
+  onChange: (value: '全部' | RuleSource) => void;
+}) {
+  return (
+    <div className="flex items-center text-sm gap-2 whitespace-nowrap">
+      <span className="text-gray-600 min-w-16 text-right">来源:</span>
+      <div className="relative flex-1 min-w-32">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value as '全部' | RuleSource)}
+          className="w-full appearance-none px-3 py-1.5 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition text-gray-700"
+        >
+          <option value="全部">全部</option>
+          <option value="AI_GENERATED">AI生成</option>
+          <option value="MANUAL">人工新建</option>
         </select>
         <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
           <ChevronDown className="w-4 h-4" />

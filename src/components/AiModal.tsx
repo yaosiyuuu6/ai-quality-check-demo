@@ -48,6 +48,7 @@ const generateMockRule = (index: number, type: string): Rule => ({
   isValid: true,
   author: GENERATED_AUTHORS[index % GENERATED_AUTHORS.length],
   createdAt: new Date().toLocaleString(),
+  source: 'AI_GENERATED',
   isGenerated: true,
   isRead: false
 });

@@ -11,6 +11,7 @@ export interface Rule {
   isValid: boolean;
   author: string;
   createdAt: string;
+  source?: 'AI_GENERATED' | 'MANUAL';
   isGenerated?: boolean;
   isRead?: boolean;
 }
