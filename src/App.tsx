@@ -1,8 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, ChevronUp, Search, X, Play, Copy, RefreshCw, Settings2, Trash2, Edit } from 'lucide-react';
-import { Rule, RuleFormData } from './types';
+import { AiGenerationTask, Rule, RuleFormData } from './types';
 import RuleModal from './components/RuleModal';
 import AiModal from './components/AiModal';
+import PlannerWorkbench from './components/PlannerWorkbench';
+import { mockRules } from './data';
+import { applyDuplicateCheck, findDuplicateMatches } from './duplicate';
 
 type RuleSource = 'AI_GENERATED' | 'MANUAL';
 
@@ -10,17 +13,27 @@ const getRuleSource = (rule: Rule): RuleSource => rule.source || (rule.isGenerat
 const getSourceLabel = (source: RuleSource) => (source === 'AI_GENERATED' ? 'AI生成' : '人工新建');
 
 export default function App() {
-  const [rules, setRules] = useState<Rule[]>([]);
+  const [rules, setRules] = useState<Rule[]>(mockRules);
   const [sourceFilter, setSourceFilter] = useState<'全部' | RuleSource>('全部');
   
   // Modals state
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [plannerTask, setPlannerTask] = useState<AiGenerationTask | null>(null);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [compareRuleId, setCompareRuleId] = useState<string | null>(null);
+  const [compareNameKeyword, setCompareNameKeyword] = useState('');
+  const [compareFieldKeyword, setCompareFieldKeyword] = useState('');
+  const [isSuspectFirst, setIsSuspectFirst] = useState(true);
 
   // New Rule Dropdown state
   const [isNewRuleMenuOpen, setIsNewRuleMenuOpen] = useState(false);
   const newRuleMenuRef = useRef<HTMLDivElement>(null);
+  const rulesRef = useRef<Rule[]>(mockRules);
+
+  useEffect(() => {
+    rulesRef.current = rules;
+  }, [rules]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -56,9 +69,29 @@ export default function App() {
     handleEdit(id);
   };
 
+  const handleCompareAction = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCompareRuleId(id);
+    setCompareNameKeyword('');
+    setCompareFieldKeyword('');
+    setIsSuspectFirst(true);
+  };
+
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setRules(rules.filter((r) => r.id !== id));
+    handleDeleteRule(id);
+  };
+
+  const handleDeleteRule = (id: string) => {
+    const rule = rulesRef.current.find((item) => item.id === id);
+    if (!rule) return;
+    if (!window.confirm(`确认删除语句「${rule.name}」吗？`)) return;
+
+    const nextRules = rulesRef.current.filter((item) => item.id !== id);
+    rulesRef.current = nextRules;
+    setRules(nextRules);
+    if (compareRuleId === id) setCompareRuleId(null);
+    if (editingRuleId === id) setEditingRuleId(null);
   };
 
   const handleToggleStatus = (id: string, e: React.MouseEvent) => {
@@ -86,7 +119,8 @@ export default function App() {
     const existingRule = editingRuleId ? rules.find((rule) => rule.id === editingRuleId) : undefined;
     if (existingRule) {
       setRules((prev) =>
-        prev.map((rule) =>
+        {
+          const nextRules = prev.map((rule) =>
           rule.id === editingRuleId
             ? {
                 ...rule,
@@ -99,7 +133,10 @@ export default function App() {
                 source: getRuleSource(rule),
               }
             : rule,
-        ),
+          );
+          rulesRef.current = nextRules;
+          return nextRules;
+        },
       );
     } else {
       const manualRule: Rule = {
@@ -119,24 +156,65 @@ export default function App() {
         isGenerated: false,
         isRead: true,
       };
-      setRules((prev) => [...prev, manualRule]);
+      setRules((prev) => {
+        const nextRules = [...prev, manualRule];
+        rulesRef.current = nextRules;
+        return nextRules;
+      });
     }
     setIsRuleModalOpen(false);
     setEditingRuleId(null);
   };
 
-  const handleAiComplete = () => {
+  const handleAiStart = (task: AiGenerationTask) => {
     setIsAiModalOpen(false);
+    setPlannerTask(task);
   };
 
   const handleRuleGenerated = (rule: Rule) => {
-    setRules(prev => [...prev, rule]);
+    const checkedRule = applyDuplicateCheck(rule, rulesRef.current);
+    const nextRules = [...rulesRef.current, checkedRule];
+    rulesRef.current = nextRules;
+    setRules(nextRules);
+    return checkedRule;
+  };
+
+  const handleRunDuplicateCheck = (id: string) => {
+    const target = rulesRef.current.find((rule) => rule.id === id);
+    if (!target) return;
+
+    const checkedRule = applyDuplicateCheck(
+      target,
+      rulesRef.current.filter((rule) => rule.id !== id),
+    );
+    const nextRules = rulesRef.current.map((rule) => (rule.id === id ? checkedRule : rule));
+    rulesRef.current = nextRules;
+    setRules(nextRules);
+  };
+
+  const handleKeepRule = (id: string) => {
+    const nextRules = rulesRef.current.map((rule) =>
+      rule.id === id
+        ? {
+            ...rule,
+            duplicateRisk: 'none' as const,
+            duplicateReason: undefined,
+            duplicateMatchIds: [],
+            manualReviewStatus: 'kept' as const,
+            isRead: true,
+          }
+        : rule,
+    );
+    rulesRef.current = nextRules;
+    setRules(nextRules);
   };
 
   const filteredRules = rules.filter((rule) => sourceFilter === '全部' || getRuleSource(rule) === sourceFilter);
+  const compareRule = compareRuleId ? rules.find((rule) => rule.id === compareRuleId) : undefined;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-sm text-gray-800">
+    <div className="flex h-screen overflow-hidden bg-gray-50 font-sans text-sm text-gray-800">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
       <div className="bg-white px-6 py-4 shadow-sm z-10 flex flex-col gap-4">
         {/* Top Filter Area */}
         <div className="grid grid-cols-5 2xl:grid-cols-8 gap-x-6 gap-y-4">
@@ -207,9 +285,10 @@ export default function App() {
       </div>
 
       {/* Main Table Area */}
-      <div className="flex-1 p-6 overflow-auto">
-        <div className="bg-white border border-gray-200 rounded shadow-sm w-max min-w-full">
-          <table className="w-full text-left border-collapse whitespace-nowrap">
+      <div className="min-h-0 flex-1 overflow-hidden p-6">
+        <div className="h-full min-w-0 overflow-auto">
+        <div className="w-full max-w-full overflow-x-auto rounded border border-gray-200 bg-white shadow-sm">
+          <table className="min-w-[1500px] text-left border-collapse whitespace-nowrap">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200 text-gray-600 font-medium">
                 <th className="px-4 py-3 w-10 text-center"><input type="checkbox" className="rounded text-blue-600 border-gray-300" /></th>
@@ -220,6 +299,7 @@ export default function App() {
                 <th className="px-4 py-3">优先级</th>
                 <th className="px-4 py-3">质检类型</th>
                 <th className="px-4 py-3">来源</th>
+                <th className="px-4 py-3">疑似重复</th>
                 <th className="px-4 py-3">调试状态</th>
                 <th className="px-4 py-3">错误类型</th>
                 <th className="px-4 py-3">状态</th>
@@ -232,7 +312,7 @@ export default function App() {
             <tbody className="divide-y divide-gray-100">
               {filteredRules.length === 0 && (
                 <tr>
-                  <td colSpan={15} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={16} className="px-4 py-8 text-center text-gray-500">
                     暂无数据，请尝试新建语句
                   </td>
                 </tr>
@@ -274,6 +354,19 @@ export default function App() {
                         {getSourceLabel(source)}
                       </span>
                     </td>
+                    <td className="px-4 py-3">
+                      {rule.duplicateRisk === 'possible' && (
+                        <div className="max-w-[260px]">
+                          <span className="rounded border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs text-orange-700">
+                            疑似重复
+                          </span>
+                          {rule.duplicateReason && <div className="mt-1 truncate text-xs text-orange-700" title={rule.duplicateReason}>{rule.duplicateReason}</div>}
+                        </div>
+                      )}
+                      {rule.manualReviewStatus === 'kept' && rule.duplicateRisk !== 'possible' && (
+                        <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs text-green-700">已保留</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-gray-600">{rule.debugStatus}</td>
                     <td className="px-4 py-3 text-gray-600">{rule.errorType}</td>
                     <td className="px-4 py-3">
@@ -314,6 +407,7 @@ export default function App() {
         <div className="mt-4 flex justify-end text-xs text-gray-400">
            watermark simulation ~ yaochenkai@myhexin...
         </div>
+        </div>
       </div>
 
       <RuleModal 
@@ -326,9 +420,215 @@ export default function App() {
       <AiModal
         isOpen={isAiModalOpen}
         onClose={() => setIsAiModalOpen(false)}
-        onRuleGenerated={handleRuleGenerated}
-        onComplete={handleAiComplete}
+        onStart={handleAiStart}
       />
+      </div>
+
+      {plannerTask && (
+        <PlannerWorkbench
+          task={plannerTask}
+          onClose={() => setPlannerTask(null)}
+          onRuleGenerated={handleRuleGenerated}
+        />
+      )}
+
+      <ComparePanel
+        rule={compareRule}
+        rules={rules}
+        nameKeyword={compareNameKeyword}
+        fieldKeyword={compareFieldKeyword}
+        isSuspectFirst={isSuspectFirst}
+        onNameKeywordChange={setCompareNameKeyword}
+        onFieldKeywordChange={setCompareFieldKeyword}
+        onSuspectFirstChange={setIsSuspectFirst}
+        onClose={() => setCompareRuleId(null)}
+        onRunDuplicateCheck={handleRunDuplicateCheck}
+        onKeep={handleKeepRule}
+        onEdit={(id) => {
+          setCompareRuleId(null);
+          handleEdit(id);
+        }}
+        onDelete={handleDeleteRule}
+      />
+    </div>
+  );
+}
+
+function ComparePanel({
+  rule,
+  rules,
+  nameKeyword,
+  fieldKeyword,
+  isSuspectFirst,
+  onNameKeywordChange,
+  onFieldKeywordChange,
+  onSuspectFirstChange,
+  onClose,
+  onRunDuplicateCheck,
+  onKeep,
+  onEdit,
+  onDelete,
+}: {
+  rule?: Rule;
+  rules: Rule[];
+  nameKeyword: string;
+  fieldKeyword: string;
+  isSuspectFirst: boolean;
+  onNameKeywordChange: (value: string) => void;
+  onFieldKeywordChange: (value: string) => void;
+  onSuspectFirstChange: (value: boolean) => void;
+  onClose: () => void;
+  onRunDuplicateCheck: (id: string) => void;
+  onKeep: (id: string) => void;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  if (!rule) return null;
+
+  const matches = findDuplicateMatches(
+    rule,
+    rules.filter((item) => item.id !== rule.id),
+  );
+  const matchMap = new Map(matches.map((match) => [match.ruleId, match]));
+  const filteredCandidates = rules
+    .filter((item) => item.id !== rule.id)
+    .filter((item) => item.name.toLowerCase().includes(nameKeyword.trim().toLowerCase()))
+    .filter((item) => item.fieldName.toLowerCase().includes(fieldKeyword.trim().toLowerCase()))
+    .sort((left, right) => {
+      if (!isSuspectFirst) return 0;
+      const leftMatched = matchMap.has(left.id);
+      const rightMatched = matchMap.has(right.id);
+      if (leftMatched === rightMatched) return 0;
+      return leftMatched ? -1 : 1;
+    });
+
+  return (
+    <div className="fixed inset-0 z-[60] flex justify-end">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative flex h-full w-[1120px] max-w-[96vw] flex-col bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <div>
+            <h2 className="text-[17px] font-medium text-gray-900">语句对比</h2>
+            <p className="mt-1 text-xs text-gray-500">左侧为当前语句；右侧为其他语句，疑似候选置顶但不截断全量列表。</p>
+          </div>
+          <button onClick={onClose} className="rounded-md p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 grid-cols-[420px_minmax(0,1fr)] gap-4 overflow-hidden p-6">
+          <div className="flex min-h-0 flex-col rounded-lg border border-blue-100 bg-blue-50/70">
+            <div className="border-b border-blue-100 px-4 py-3">
+              <div className="text-xs font-medium uppercase text-blue-700">当前语句</div>
+              <h3 className="mt-2 text-base font-semibold text-gray-900">{rule.name}</h3>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-4">
+              <InfoLine label="ID" value={rule.id} />
+              <InfoLine label="字段名称" value={rule.fieldName} />
+              <InfoLine label="组或分类" value={rule.groupCategory} />
+              <InfoLine label="质检类型" value={rule.qualityType} />
+              <InfoLine label="错误类型" value={rule.errorType} />
+              <InfoLine label="状态" value={rule.status} />
+              <InfoLine label="来源" value={getSourceLabel(getRuleSource(rule))} />
+              <InfoLine label="最近筛查" value={rule.duplicateCheckedAt || '未筛查'} />
+              {rule.duplicateRisk === 'possible' && rule.duplicateReason && (
+                <div className="mt-4 rounded-md border border-orange-200 bg-orange-50 p-3 text-xs leading-5 text-orange-700">
+                  <div className="mb-1 font-medium">疑似重复原因</div>
+                  {rule.duplicateReason}
+                </div>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2 border-t border-blue-100 bg-white/70 px-4 py-3">
+              <button onClick={() => onRunDuplicateCheck(rule.id)} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm text-white transition hover:bg-blue-700">
+                重复筛查当前语句
+              </button>
+              <button onClick={() => onKeep(rule.id)} className="rounded-md border border-green-200 bg-green-50 px-3 py-1.5 text-sm text-green-700 transition hover:bg-green-100">
+                保留
+              </button>
+              <button onClick={() => onEdit(rule.id)} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 transition hover:border-blue-400 hover:text-blue-600">
+                编辑
+              </button>
+              <button onClick={() => onDelete(rule.id)} className="rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-sm text-red-600 transition hover:bg-red-100">
+                删除
+              </button>
+            </div>
+          </div>
+
+          <div className="flex min-w-0 flex-col rounded-lg border border-gray-200 bg-white">
+            <div className="border-b border-gray-100 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-gray-900">其他语句列表</div>
+                  <div className="mt-1 text-xs text-gray-500">当前命中 {matches.length} 条疑似候选，右侧筛选只作用于此列表。</div>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-gray-600">
+                  <input type="checkbox" checked={isSuspectFirst} onChange={(event) => onSuspectFirstChange(event.target.checked)} />
+                  疑似优先
+                </label>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <input
+                  value={nameKeyword}
+                  onChange={(event) => onNameKeywordChange(event.target.value)}
+                  placeholder="搜索语句名称"
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                />
+                <input
+                  value={fieldKeyword}
+                  onChange={(event) => onFieldKeywordChange(event.target.value)}
+                  placeholder="筛选字段名称"
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              {filteredCandidates.length === 0 && <div className="py-12 text-center text-sm text-gray-400">暂无匹配语句</div>}
+              <div className="space-y-3">
+                {filteredCandidates.map((candidate) => {
+                  const match = matchMap.get(candidate.id);
+                  return (
+                    <div key={candidate.id} className={`rounded-lg border p-4 ${match ? 'border-orange-200 bg-orange-50/70' : 'border-gray-200 bg-white'}`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {match && <span className="rounded border border-orange-200 bg-orange-100 px-2 py-0.5 text-xs text-orange-700">疑似候选</span>}
+                            {candidate.manualReviewStatus === 'kept' && <span className="rounded border border-green-200 bg-green-50 px-2 py-0.5 text-xs text-green-700">已保留</span>}
+                            <h4 className="truncate text-sm font-medium text-gray-900">{candidate.name}</h4>
+                          </div>
+                          <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
+                            <span>ID：{candidate.id}</span>
+                            <span>字段：{candidate.fieldName}</span>
+                            <span>分类：{candidate.groupCategory}</span>
+                            <span>错误类型：{candidate.errorType}</span>
+                            <span>来源：{getSourceLabel(getRuleSource(candidate))}</span>
+                            <span>状态：{candidate.status}</span>
+                          </div>
+                          {match && <div className="mt-3 rounded border border-orange-200 bg-white/80 px-3 py-2 text-xs leading-5 text-orange-700">相似原因：{match.reason}</div>}
+                        </div>
+                        <div className="flex shrink-0 flex-col gap-2">
+                          <button onClick={() => onKeep(candidate.id)} className="rounded-md border border-green-200 bg-green-50 px-3 py-1.5 text-xs text-green-700 transition hover:bg-green-100">保留</button>
+                          <button onClick={() => onEdit(candidate.id)} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-700 transition hover:border-blue-400 hover:text-blue-600">编辑</button>
+                          <button onClick={() => onDelete(candidate.id)} className="rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-600 transition hover:bg-red-100">删除</button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InfoLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="mb-3 flex justify-between gap-4 text-sm">
+      <span className="text-gray-500">{label}</span>
+      <span className="text-right font-medium text-gray-800">{value}</span>
     </div>
   );
 }
@@ -351,8 +651,8 @@ function FilterSelect({ label, placeholder }: { label: string; placeholder: stri
     <div className="flex items-center text-sm gap-2 whitespace-nowrap">
       <span className="text-gray-600 min-w-16 text-right">{label}:</span>
       <div className="relative flex-1 min-w-32">
-        <select className="w-full appearance-none px-3 py-1.5 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition text-gray-700">
-          <option value="" disabled selected className="text-gray-400">{placeholder}</option>
+        <select defaultValue="" className="w-full appearance-none px-3 py-1.5 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition text-gray-700">
+          <option value="" disabled className="text-gray-400">{placeholder}</option>
           <option value="1">Option 1</option>
         </select>
         <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">

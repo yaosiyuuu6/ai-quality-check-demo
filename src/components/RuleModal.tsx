@@ -170,13 +170,18 @@ export default function RuleModal({ isOpen, onClose, onSave, initialData }: Rule
                   <div className="relative">
                     <select 
                       value={formData.priority || 4}
-                      onChange={(e) => handleChange('priority', Number(e.target.value))}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        handleChange('priority', /^\d+$/.test(value) ? Number(value) : value);
+                      }}
                       className="w-full appearance-none px-3 py-1.5 border border-gray-300 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                     >
                       <option value={1}>1</option>
                       <option value={2}>2</option>
                       <option value={3}>3</option>
                       <option value={4}>4</option>
+                      <option value="A股-研发支出1">A股-研发支出1</option>
+                      <option value="A股-研发支出2">A股-研发支出2</option>
                     </select>
                     <ChevronDown className="w-4 h-4 absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                   </div>

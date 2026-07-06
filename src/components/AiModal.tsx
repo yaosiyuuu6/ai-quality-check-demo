@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { X, Loader2, ChevronDown, CheckCircle2, Clock } from 'lucide-react';
-import { Rule } from '../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, Clock, HelpCircle, X } from 'lucide-react';
+import { AiGenerationTask } from '../types';
 
 interface AiModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onRuleGenerated: (rule: Rule) => void;
-  onComplete: () => void;
+  onStart: (task: AiGenerationTask) => void;
 }
 
 const QUALITY_TYPES = [
@@ -32,257 +31,217 @@ const QUALITY_TYPES = [
   { label: '指数', group: 5 },
 ];
 
-const DOCS = ['上市公司2023年报披露要求.pdf', '各类理财产品质检规划_v2.docx', '债券存续期规则v1.1.pdf'];
-const GENERATED_AUTHORS = ['张三', '李四', '王五', '赵六', '钱七'];
+const DOCS = ['港股股权激励处理方案', '上市公司2023年报披露要求.pdf', '各类理财产品质检规划_v2.docx', '债券存续期规则v1.1.pdf'];
+const PRIORITIES = ['A股-研发支出1', 'A股-研发支出2'];
 
-const generateMockRule = (index: number, type: string): Rule => ({
-  id: Math.floor(Math.random() * 100000).toString(),
-  name: `(AI生成) ${type} - 质检规则 ${index + 1}`,
-  fieldName: ['F013V_STK487', 'F010V_STK487', 'F012N_STK487'][index % 3],
-  groupCategory: type,
-  priority: [1, 2, 3, 4][index % 4] as any,
-  qualityType: 'AI质检',
-  debugStatus: '未调试',
-  errorType: index % 2 === 0 ? '肯定错误' : '可疑错误',
-  status: '停用',
-  isValid: true,
-  author: GENERATED_AUTHORS[index % GENERATED_AUTHORS.length],
-  createdAt: new Date().toLocaleString(),
-  source: 'AI_GENERATED',
-  isGenerated: true,
-  isRead: false
-});
-
-export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }: AiModalProps) {
-  const [step, setStep] = useState<'form' | 'generating' | 'completed'>('form');
-  
-  // Form State
-  const [selectedType, setSelectedType] = useState(QUALITY_TYPES[0].label);
-  const [selectedDoc, setSelectedDoc] = useState(DOCS[0]);
+export default function AiModal({ isOpen, onClose, onStart }: AiModalProps) {
+  const [selectedType, setSelectedType] = useState('');
+  const [selectedDoc, setSelectedDoc] = useState('');
+  const [selectedPriority, setSelectedPriority] = useState('');
   const [timingStrategy, setTimingStrategy] = useState('09:00:00');
   const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
-  
-  // Generation State
-  const [logs, setLogs] = useState<string[]>([]);
-  const [elapsedTime, setElapsedTime] = useState(0);
-  
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const elapsedTimeTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const logsContainerRef = useRef<HTMLDivElement>(null);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+
+  const canSubmit = useMemo(
+    () => Boolean(selectedType && selectedDoc && selectedPriority && timingStrategy.trim()),
+    [selectedType, selectedDoc, selectedPriority, timingStrategy],
+  );
 
   useEffect(() => {
     if (!isOpen) {
-      setStep('form');
-      setLogs([]);
-      setElapsedTime(0);
+      setSelectedType('');
+      setSelectedDoc('');
+      setSelectedPriority('');
+      setTimingStrategy('09:00:00');
       setIsTypeDropdownOpen(false);
-      clearTimer();
+      setHasSubmitted(false);
     }
   }, [isOpen]);
 
   useEffect(() => {
-    if (logsContainerRef.current) {
-        logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
-    }
-  }, [logs]);
+    if (!isOpen) return;
 
-  const clearTimer = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    if (elapsedTimeTimerRef.current) {
-      clearInterval(elapsedTimeTimerRef.current);
-      elapsedTimeTimerRef.current = null;
-    }
-  };
-
-  const startGeneration = () => {
-    setStep('generating');
-    setLogs([]);
-    setElapsedTime(0);
-    
-    const startTime = Date.now();
-    elapsedTimeTimerRef.current = setInterval(() => {
-        setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
-    
-    let rulesGenerated = 0;
-    const totalRules = 10;
-    let logCounter = 0;
-    
-    timerRef.current = setInterval(() => {
-      logCounter++;
-      
-      let newLog = "";
-      if (logCounter === 1) newLog = `解析规划文档: ${selectedDoc}`;
-      else if (logCounter === 2) newLog = `开始批量生成 ${selectedType} 的质检语句...`;
-      else if (logCounter > 2 && rulesGenerated < totalRules) {
-          newLog = `生成第 ${rulesGenerated + 1} 条质检语句...`;
-          const newRule = generateMockRule(rulesGenerated, selectedType);
-          onRuleGenerated(newRule);
-          rulesGenerated++;
-      } else if (rulesGenerated >= totalRules && logCounter === totalRules + 3) {
-          newLog = "所有语句生成校验完成。";
-      } else if (logCounter > totalRules + 3) {
-          clearTimer();
-          setStep('completed');
-          return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+        return;
       }
-
-      if (newLog) {
-          setLogs(prev => [...prev, newLog]);
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        handleStart();
       }
-    }, 600); 
-  };
+    };
 
-  const handleCancel = () => {
-    clearTimer();
-    setStep('form');
-    setLogs([]);
-    setElapsedTime(0);
-  };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [canSubmit, isOpen, onClose, selectedDoc, selectedPriority, selectedType, timingStrategy]);
 
-  const handleComplete = () => {
-    onComplete();
+  const handleStart = () => {
+    setHasSubmitted(true);
+    if (!canSubmit) return;
+
+    onStart({
+      qualityType: selectedType,
+      documentName: selectedDoc,
+      priority: selectedPriority,
+      timingStrategy: timingStrategy.trim(),
+    });
   };
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" onClick={step === 'form' ? onClose : undefined} />
-      
-      <div className="bg-white rounded-lg shadow-xl w-[600px] flex flex-col relative z-10 animate-in fade-in zoom-in duration-200">
-        
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-[17px] font-medium text-gray-900">
-            AI新建语句
-          </h2>
-          {step === 'form' && (
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition p-1 hover:bg-gray-100 rounded-md">
-              <X className="w-5 h-5" />
-            </button>
-          )}
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+
+      <div className="relative z-10 w-[700px] max-w-[calc(100vw-40px)] rounded-lg bg-white shadow-xl">
+        <div className="flex items-center justify-between px-6 py-4">
+          <h2 className="text-[18px] font-semibold text-[#1f1f1f]">AI 新建语句</h2>
+          <button
+            onClick={onClose}
+            aria-label="关闭"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition hover:bg-gray-100 hover:text-gray-600"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
-        <div className="px-8 py-8 min-h-[300px]">
-          {step === 'form' ? (
-            <div className="space-y-6">
-              <div className="flex flex-col gap-2 relative">
-                <label className="text-gray-700 font-medium">质检语句类型</label>
-                <div 
-                  className="w-full px-3 py-2 border border-gray-300 rounded focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 cursor-pointer flex justify-between items-center"
-                  onClick={() => setIsTypeDropdownOpen(!isTypeDropdownOpen)}
+        <div className="px-7 pb-7">
+          <div className="space-y-7">
+            <Field label="质检语句类型" required invalid={hasSubmitted && !selectedType}>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsTypeDropdownOpen((open) => !open)}
+                  className={`flex h-9 w-full items-center justify-between rounded-md border px-3 text-left text-[14px] outline-none transition ${
+                    hasSubmitted && !selectedType ? 'border-red-300' : 'border-[#d9d9d9] focus:border-[#1677ff]'
+                  } ${selectedType ? 'text-[#262626]' : 'text-[#bfbfbf]'}`}
                 >
-                  <span className="text-[14px] text-gray-800">{selectedType}</span>
-                  <ChevronDown className="w-4 h-4 text-gray-400" />
-                </div>
-                
+                  <span>{selectedType || '请选择质检语句类型'}</span>
+                  <ChevronDown className="h-4 w-4 text-[#bfbfbf]" />
+                </button>
+
                 {isTypeDropdownOpen && (
-                  <div className="absolute top-[70px] left-0 w-full max-h-[220px] overflow-y-auto bg-white border border-gray-200 rounded shadow-lg z-20">
+                  <div className="absolute left-0 top-[42px] z-20 max-h-[230px] w-full overflow-y-auto rounded-md border border-[#d9d9d9] bg-white py-1 shadow-lg">
                     {QUALITY_TYPES.map((type) => (
-                      <div 
+                      <button
                         key={type.label}
+                        type="button"
                         onClick={() => {
                           setSelectedType(type.label);
                           setIsTypeDropdownOpen(false);
                         }}
-                        className={`px-4 py-2 cursor-pointer text-[14px] transition-colors
-                          ${type.group % 2 === 1 ? 'bg-[#F9FAFB]' : 'bg-white'} 
-                          hover:bg-blue-50 hover:text-blue-600
-                        `}
+                        className={`block w-full px-3 py-2 text-left text-[14px] transition hover:bg-[#e6f4ff] hover:text-[#0958d9] ${
+                          type.group % 2 === 1 ? 'bg-[#fafafa]' : 'bg-white'
+                        }`}
                       >
                         {type.label}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 )}
               </div>
+            </Field>
 
-              <div className="flex flex-col gap-2">
-                <label className="text-gray-700 font-medium">规划文档</label>
-                <div className="relative">
-                  <select 
-                    value={selectedDoc}
-                    onChange={(e) => setSelectedDoc(e.target.value)}
-                    className="w-full appearance-none px-3 py-2 border border-gray-300 rounded text-[14px] text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  >
-                    {DOCS.map(doc => <option key={doc} value={doc}>{doc}</option>)}
-                  </select>
-                  <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                </div>
+            <Field label="规划文档" required invalid={hasSubmitted && !selectedDoc}>
+              <div className="relative">
+                <select
+                  value={selectedDoc}
+                  onChange={(event) => setSelectedDoc(event.target.value)}
+                  className={`h-9 w-full appearance-none rounded-md border bg-white px-3 text-[14px] outline-none transition ${
+                    selectedDoc ? 'text-[#262626]' : 'text-[#bfbfbf]'
+                  } ${hasSubmitted && !selectedDoc ? 'border-red-300' : 'border-[#d9d9d9] focus:border-[#1677ff]'}`}
+                >
+                  <option value="">请选择规划文档</option>
+                  {DOCS.map((doc) => (
+                    <option key={doc} value={doc}>
+                      {doc}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#bfbfbf]" />
               </div>
+            </Field>
 
-              <div className="flex flex-col gap-2">
-                <label className="text-gray-700 font-medium">定时策略</label>
-                <div className="relative w-[136px]">
+            <div className="grid grid-cols-[1fr_136px] gap-48">
+              <Field label="优先级" required invalid={hasSubmitted && !selectedPriority}>
+                <div className="relative">
+                  <select
+                    value={selectedPriority}
+                    onChange={(event) => setSelectedPriority(event.target.value)}
+                    className={`h-9 w-full appearance-none rounded-md border bg-white px-3 text-[14px] outline-none transition ${
+                      selectedPriority ? 'text-[#262626]' : 'text-[#bfbfbf]'
+                    } ${hasSubmitted && !selectedPriority ? 'border-red-300' : 'border-[#d9d9d9] focus:border-[#1677ff]'}`}
+                  >
+                    <option value="">请选择优先级</option>
+                    {PRIORITIES.map((priority) => (
+                      <option key={priority} value={priority}>
+                        {priority}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#bfbfbf]" />
+                </div>
+              </Field>
+
+              <Field label="定时策略" required invalid={hasSubmitted && !timingStrategy.trim()}>
+                <div className="relative">
                   <input
                     type="text"
                     value={timingStrategy}
-                    onChange={(e) => setTimingStrategy(e.target.value)}
-                    className="w-full rounded border border-gray-300 px-3 py-2 pr-9 text-[14px] text-gray-800 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    onChange={(event) => setTimingStrategy(event.target.value)}
+                    className={`h-9 w-full rounded-md border px-3 pr-9 text-[14px] text-[#262626] outline-none transition ${
+                      hasSubmitted && !timingStrategy.trim() ? 'border-red-300' : 'border-[#d9d9d9] focus:border-[#1677ff]'
+                    }`}
                   />
-                  <Clock className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
+                  <Clock className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#bfbfbf]" />
                 </div>
-              </div>
+              </Field>
             </div>
-          ) : (
-            <div className="flex flex-col h-full">
-              {/* Status Header */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2 text-gray-700 font-medium">
-                  {step === 'generating' && <Loader2 className="w-4 h-4 animate-spin text-blue-600" />}
-                  {step === 'completed' && <CheckCircle2 className="w-4 h-4 text-green-500" />}
-                  <span>{step === 'generating' ? '正在生成...' : '生成完成'}</span>
-                </div>
-                <div className="text-[13px] text-gray-500 font-mono">
-                  运行时间: {elapsedTime}s
-                </div>
-              </div>
+          </div>
 
-              {/* Streaming Logs Box */}
-              <div 
-                ref={logsContainerRef}
-                className="flex-1 bg-[#1E1E1E] rounded-md p-4 h-[200px] overflow-y-auto font-mono text-[13px] scroll-smooth"
-              >
-                {logs.map((log, i) => (
-                  <div key={i} className="text-emerald-400 opacity-90 leading-relaxed animate-in fade-in slide-in-from-bottom-1 blur-in">
-                    <span className="text-gray-500 mr-2">&gt;</span> {log}
-                  </div>
-                ))}
-                {step === 'generating' && (
-                  <div className="text-gray-400 mt-2 flex items-center gap-2">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> 处理中...
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+          {hasSubmitted && !canSubmit && <div className="mt-4 text-xs text-red-500">请先补全必填项。</div>}
 
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-white rounded-b-lg">
-          {step === 'form' ? (
-            <>
-              <button onClick={onClose} className="px-6 py-1.5 text-[14px] text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition">
-                取消
-              </button>
-              <button onClick={startGeneration} className="px-6 py-1.5 text-[14px] text-white bg-blue-600 hover:bg-blue-700 rounded transition flex items-center gap-2">
-                生成
-              </button>
-            </>
-          ) : step === 'generating' ? (
-            <button onClick={handleCancel} className="px-6 py-1.5 text-[14px] text-gray-700 border border-gray-300 rounded hover:bg-gray-50 transition">
-              取消生成
+          <div className="mt-8 flex justify-end gap-3">
+            <button
+              onClick={onClose}
+              className="h-9 rounded-md border border-[#d9d9d9] bg-white px-5 text-[14px] text-[#262626] transition hover:border-[#1677ff] hover:text-[#1677ff]"
+            >
+              取消
             </button>
-          ) : step === 'completed' ? (
-            <button onClick={handleComplete} className="px-6 py-1.5 text-[14px] text-white bg-blue-600 hover:bg-blue-700 rounded transition flex items-center gap-2">
-              完成
+            <button
+              onClick={handleStart}
+              className="h-9 rounded-md bg-[#1677ff] px-5 text-[14px] text-white transition hover:bg-[#0958d9]"
+            >
+              生成
             </button>
-          ) : null}
+          </div>
         </div>
-
       </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  required,
+  invalid,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  invalid?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <label className="flex items-center gap-1 text-[14px] font-medium text-[#262626]">
+        {required && <span className="text-red-500">*</span>}
+        <span>{label}</span>
+        {label === '质检语句类型' && <HelpCircle className="h-3.5 w-3.5 text-[#8c8c8c]" />}
+      </label>
+      {children}
+      {invalid && <div className="text-xs text-red-500">请选择{label}</div>}
     </div>
   );
 }

@@ -3,7 +3,7 @@ export interface Rule {
   name: string;
   fieldName: string;
   groupCategory: string;
-  priority: number;
+  priority: number | string;
   qualityType: '规则质检' | 'AI质检';
   debugStatus: string;
   errorType: string;
@@ -14,6 +14,25 @@ export interface Rule {
   source?: 'AI_GENERATED' | 'MANUAL';
   isGenerated?: boolean;
   isRead?: boolean;
+  duplicateRisk?: 'possible' | 'none';
+  duplicateReason?: string;
+  duplicateMatchIds?: string[];
+  duplicateCheckedAt?: string;
+  manualReviewStatus?: 'kept';
+}
+
+export interface DuplicateMatch {
+  ruleId: string;
+  ruleName: string;
+  fieldName: string;
+  reason: string;
+}
+
+export interface AiGenerationTask {
+  qualityType: string;
+  documentName: string;
+  priority: string;
+  timingStrategy: string;
 }
 
 export interface RuleFormData {
@@ -21,7 +40,7 @@ export interface RuleFormData {
   categoryType: '组' | '宏观节点';
   categoryValue: string;
   fieldName: string;
-  priority: number;
+  priority: number | string;
   errorType: string;
   qualityType: '规则质检' | 'AI质检';
   timingStrategy: string;
