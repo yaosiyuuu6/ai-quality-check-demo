@@ -170,9 +170,15 @@ export default function RuleModal({ isOpen, onClose, onSave, initialData }: Rule
                   <div className="relative">
                     <select 
                       value={formData.priority || 4}
-                      onChange={(e) => handleChange('priority', Number(e.target.value))}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        handleChange('priority', /^[1-4]$/.test(value) ? Number(value) : value);
+                      }}
                       className="w-full appearance-none px-3 py-1.5 border border-gray-300 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                     >
+                      {typeof formData.priority === 'string' && !/^[1-4]$/.test(formData.priority) && (
+                        <option value={formData.priority}>{formData.priority}</option>
+                      )}
                       <option value={1}>1</option>
                       <option value={2}>2</option>
                       <option value={3}>3</option>

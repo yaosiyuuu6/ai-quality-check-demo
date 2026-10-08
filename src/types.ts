@@ -3,7 +3,7 @@ export interface Rule {
   name: string;
   fieldName: string;
   groupCategory: string;
-  priority: number;
+  priority: number | string;
   qualityType: '规则质检' | 'AI质检';
   debugStatus: string;
   errorType: string;
@@ -21,7 +21,7 @@ export interface RuleFormData {
   categoryType: '组' | '宏观节点';
   categoryValue: string;
   fieldName: string;
-  priority: number;
+  priority: number | string;
   errorType: string;
   qualityType: '规则质检' | 'AI质检';
   timingStrategy: string;
