@@ -35,6 +35,7 @@ const QUALITY_TYPES = [
 const A_SHARE_DISCLOSURE_DOC = '上市公司2023年报披露要求.pdf';
 const DOCS = ['港股股权激励处理方案', A_SHARE_DISCLOSURE_DOC, '各类理财产品质检规划_v2.docx', '债券存续期规则v1.1.pdf'];
 const GENERATED_AUTHORS = ['张三', '李四', '王五', '赵六', '钱七'];
+const SKILL_OPTIONS = ['AI质检语句生成通用skill', '其他自定义skill'] as const;
 
 type TableField = {
   code: string;
@@ -145,6 +146,7 @@ export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }
   const [step, setStep] = useState<'form' | 'generating' | 'completed' | 'cancelled'>('form');
   
   // Form State
+  const [selectedSkill, setSelectedSkill] = useState<typeof SKILL_OPTIONS[number]>(SKILL_OPTIONS[0]);
   const [selectedType, setSelectedType] = useState('');
   const [selectedDoc, setSelectedDoc] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('');
@@ -161,12 +163,16 @@ export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const elapsedTimeTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const priorityOptions = getPriorityOptions(selectedType, selectedDoc);
-  const canSubmit = Boolean(selectedType && selectedDoc && selectedPriority && timingStrategy.trim());
+  const isTypeRequired = selectedSkill !== SKILL_OPTIONS[0];
+  const effectiveType = selectedType || '常规';
+  const priorityOptions = getPriorityOptions(effectiveType, selectedDoc);
+  const isTypeInvalid = hasSubmitted && isTypeRequired && !selectedType;
+  const canSubmit = Boolean((!isTypeRequired || selectedType) && selectedDoc && selectedPriority && timingStrategy.trim());
 
   useEffect(() => {
     if (!isOpen) {
       setStep('form');
+      setSelectedSkill(SKILL_OPTIONS[0]);
       setSelectedType('');
       setSelectedDoc('');
       setSelectedPriority('');
@@ -185,7 +191,7 @@ export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }
   useEffect(() => {
     if (!isOpen) return;
 
-    if (!selectedType || !selectedDoc) {
+    if (!selectedDoc) {
       setSelectedPriority('');
       return;
     }
@@ -241,7 +247,7 @@ export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }
       logCounter++;
       
       if (logCounter > 2 && rulesGenerated < totalRules) {
-          const newRule = generateMockRule(rulesGenerated, selectedType, selectedPriority);
+          const newRule = generateMockRule(rulesGenerated, effectiveType, selectedPriority);
           onRuleGenerated(newRule);
           rulesGenerated++;
           setGeneratedCount(rulesGenerated);
@@ -307,47 +313,83 @@ export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }
         {step === 'form' ? (
           <div className="px-7 pb-7">
             <div className="space-y-7">
-              <Field label="质检语句类型" required invalid={hasSubmitted && !selectedType} showHelp>
-                <div className="relative">
-                  <button
-                    type="button"
-                    aria-haspopup="listbox"
-                    aria-expanded={isTypeDropdownOpen}
-                    onClick={() => {
-                      setIsTypeDropdownOpen((open) => !open);
-                      setIsPriorityDropdownOpen(false);
-                    }}
-                    className={`flex h-9 w-full items-center justify-between rounded-md border px-3 text-left text-[14px] outline-none transition ${
-                      hasSubmitted && !selectedType ? 'border-red-300' : 'border-[#d9d9d9] focus:border-[#1677ff]'
-                    } ${selectedType ? 'text-[#262626]' : 'text-[#bfbfbf]'}`}
-                  >
-                    <span>{selectedType || '请选择质检语句类型'}</span>
-                    <ChevronDown className="h-4 w-4 text-[#bfbfbf]" />
-                  </button>
+              <div className="grid grid-cols-[minmax(0,1fr)_200px] items-start gap-4 max-[520px]:grid-cols-1">
+                <Field label="选择skill" required>
+                  <div className="relative">
+                    <select
+                      aria-label="选择skill"
+                      value={selectedSkill}
+                      onChange={(event) => {
+                        setSelectedSkill(event.target.value as typeof SKILL_OPTIONS[number]);
+                        setIsTypeDropdownOpen(false);
+                        setIsPriorityDropdownOpen(false);
+                      }}
+                      className="h-9 w-full appearance-none rounded-md border border-[#d9d9d9] bg-white px-3 text-[14px] text-[#262626] outline-none transition focus:border-[#1677ff]"
+                    >
+                      {SKILL_OPTIONS.map((skill) => <option key={skill} value={skill}>{skill}</option>)}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#bfbfbf]" />
+                  </div>
+                </Field>
+
+                <Field label="质检语句类型" required={isTypeRequired} invalid={isTypeInvalid} showHelp>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      aria-label="质检语句类型"
+                      aria-required={isTypeRequired}
+                      aria-haspopup="listbox"
+                      aria-expanded={isTypeDropdownOpen}
+                      onClick={() => {
+                        setIsTypeDropdownOpen((open) => !open);
+                        setIsPriorityDropdownOpen(false);
+                      }}
+                      className={`flex h-9 w-full items-center justify-between rounded-md border px-3 text-left text-[14px] outline-none transition ${
+                        isTypeInvalid ? 'border-red-300' : 'border-[#d9d9d9] focus:border-[#1677ff]'
+                      } ${selectedType ? 'text-[#262626]' : 'text-[#bfbfbf]'}`}
+                    >
+                      <span className="truncate">{selectedType || '请选择质检语句类型'}</span>
+                      <ChevronDown className="ml-2 h-4 w-4 shrink-0 text-[#bfbfbf]" />
+                    </button>
                 
-                  {isTypeDropdownOpen && (
-                    <div role="listbox" className="absolute left-0 top-[42px] z-20 max-h-[230px] w-full overflow-y-auto rounded-md border border-[#d9d9d9] bg-white py-1 shadow-lg">
-                      {QUALITY_TYPES.map((type) => (
-                        <button
-                          key={type.label}
-                          type="button"
-                          role="option"
-                          aria-selected={selectedType === type.label}
-                          onClick={() => {
-                            setSelectedType(type.label);
-                            setIsTypeDropdownOpen(false);
-                          }}
-                          className={`block w-full px-3 py-2 text-left text-[14px] transition hover:bg-[#e6f4ff] hover:text-[#0958d9] ${
-                            type.group % 2 === 1 ? 'bg-[#fafafa]' : 'bg-white'
-                          }`}
-                        >
-                          {type.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </Field>
+                    {isTypeDropdownOpen && (
+                      <div role="listbox" className="absolute left-0 top-[42px] z-20 max-h-[230px] w-full overflow-y-auto rounded-md border border-[#d9d9d9] bg-white py-1 shadow-lg">
+                        {!isTypeRequired && (
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={!selectedType}
+                            onClick={() => {
+                              setSelectedType('');
+                              setIsTypeDropdownOpen(false);
+                            }}
+                            className="block w-full px-3 py-2 text-left text-[14px] text-[#8c8c8c] transition hover:bg-[#e6f4ff]"
+                          >
+                            不选择
+                          </button>
+                        )}
+                        {QUALITY_TYPES.map((type) => (
+                          <button
+                            key={type.label}
+                            type="button"
+                            role="option"
+                            aria-selected={selectedType === type.label}
+                            onClick={() => {
+                              setSelectedType(type.label);
+                              setIsTypeDropdownOpen(false);
+                            }}
+                            className={`block w-full px-3 py-2 text-left text-[14px] transition hover:bg-[#e6f4ff] hover:text-[#0958d9] ${
+                              type.group % 2 === 1 ? 'bg-[#fafafa]' : 'bg-white'
+                            }`}
+                          >
+                            {type.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </Field>
+              </div>
 
               <Field label="规划文档" required invalid={hasSubmitted && !selectedDoc}>
                 <div className="relative">
@@ -506,7 +548,7 @@ export default function AiModal({ isOpen, onClose, onRuleGenerated, onComplete }
               <div className="flex items-start justify-between border-b border-gray-100 px-6 py-4">
                 <div>
                   <h3 className="text-[16px] font-medium text-gray-900">表字段预览</h3>
-                  <p className="mt-1 text-xs text-gray-500">{selectedType} · {selectedDoc} · {previewOption.value}</p>
+                  <p className="mt-1 text-xs text-gray-500">{effectiveType} · {selectedDoc} · {previewOption.value}</p>
                 </div>
                 <button
                   type="button"
