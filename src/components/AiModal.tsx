@@ -662,20 +662,22 @@ function AgentRunPanel({
           <span className="h-3.5 w-px bg-gray-200" aria-hidden="true" />
           <span>已生成 <span className="font-mono tabular-nums text-gray-700">{generatedCount}</span> 条语句</span>
         </div>
+        {isCompleted && (
+          <button
+            type="button"
+            onClick={onOpenAgent}
+            className="ml-auto flex min-h-9 shrink-0 items-center gap-1.5 rounded px-2.5 text-[13px] font-medium text-blue-600 transition hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+          >
+            查看 Agent 运行详情
+            <ExternalLink className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white text-[13px]">
         <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-3">
           <span className="w-16 shrink-0 text-gray-400">项目</span>
           <span className="min-w-0 flex-1 text-gray-700">{conversation.projectName}</span>
-          <button
-            type="button"
-            onClick={onOpenAgent}
-            className="flex min-h-9 shrink-0 items-center gap-1.5 rounded px-2.5 font-medium text-blue-600 transition hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
-          >
-            查看 Agent 运行详情
-            <ExternalLink className="h-3.5 w-3.5" />
-          </button>
         </div>
         <div className="flex items-start gap-3 px-4 py-3">
           <span className="w-16 shrink-0 text-gray-400">名称</span>
